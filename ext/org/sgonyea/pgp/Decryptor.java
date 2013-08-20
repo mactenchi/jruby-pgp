@@ -135,7 +135,18 @@ public class Decryptor {
 
       pgpFactory = new PGPObjectFactory(compressedData.getDataStream());
 
-      literallyTheRealFuckingData = (PGPLiteralData) pgpFactory.nextObject();
+      while (true) {
+
+        Object obj = pgpFactory.nextObject();
+        if (obj == null) {
+            throw new NullPointerException("no more objects");
+        }
+        if (obj instanceof PGPLiteralData) {
+            literallyTheRealFuckingData = (PGPLiteralData) obj;
+            break;
+        }
+
+      }
 
       decryptedDataStream = literallyTheRealFuckingData.getInputStream();
 

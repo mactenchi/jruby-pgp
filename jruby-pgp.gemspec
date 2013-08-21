@@ -13,7 +13,7 @@ Gem::Specification.new do |gem|
   gem.summary       = %q{This is a Java+JRuby wrapper around the Bouncy Castle PGP APIs}
   gem.homepage      = 'https://github.com/sgonyea/jruby-pgp'
 
-  gem.files         = `git ls-files`.split($/) + %w[lib/pgp/jruby-pgp.jar]
+  gem.files         = `git ls-files`.split($/)
   gem.executables   = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }
   gem.test_files    = gem.files.grep(%r{^(test|spec|features)/})
   gem.require_paths = ['lib']

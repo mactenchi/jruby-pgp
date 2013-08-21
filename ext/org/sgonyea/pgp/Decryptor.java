@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.NoSuchProviderException;
+import java.security.SignatureException;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.util.Date;
@@ -26,27 +27,13 @@ import java.util.Iterator;
 
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.openpgp.PGPCompressedData;
-import org.bouncycastle.openpgp.PGPCompressedDataGenerator;
-import org.bouncycastle.openpgp.PGPEncryptedData;
-import org.bouncycastle.openpgp.PGPEncryptedDataGenerator;
-import org.bouncycastle.openpgp.PGPEncryptedDataList;
-import org.bouncycastle.openpgp.PGPException;
-import org.bouncycastle.openpgp.PGPLiteralData;
-import org.bouncycastle.openpgp.PGPLiteralDataGenerator;
-import org.bouncycastle.openpgp.PGPObjectFactory;
-import org.bouncycastle.openpgp.PGPPrivateKey;
-import org.bouncycastle.openpgp.PGPPublicKey;
-import org.bouncycastle.openpgp.PGPPublicKeyEncryptedData;
-import org.bouncycastle.openpgp.PGPPublicKeyRing;
-import org.bouncycastle.openpgp.PGPPublicKeyRingCollection;
-import org.bouncycastle.openpgp.PGPSecretKey;
-import org.bouncycastle.openpgp.PGPSecretKeyRingCollection;
-import org.bouncycastle.openpgp.PGPUtil;
+import org.bouncycastle.openpgp.*;
+import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProvider;
 
 public class Decryptor {
 
   private PGPSecretKeyRingCollection _privateKeys;
+  private PGPPublicKeyRingCollection _publicKeys;
 
   private String passphrase;
 
@@ -64,6 +51,10 @@ public class Decryptor {
 
   public void setPrivateKeys(PGPSecretKeyRingCollection privateKeys) {
     _privateKeys = privateKeys;
+  }
+
+  public void setPublicKeys(PGPPublicKeyRingCollection publicKeys) {
+    _publicKeys = publicKeys;
   }
 
   public void setPassphrase(String passphrase) {
@@ -87,13 +78,13 @@ public class Decryptor {
   **/
 
   public byte[] decryptBytes(byte[] encryptedBytes)
-    throws IOException, PGPException, NoSuchProviderException {
+    throws IOException, PGPException, NoSuchProviderException, SignatureException, VerificationFailedException {
       InputStream stream = new ByteArrayInputStream(encryptedBytes);
       return decryptStream(stream);
   }
 
   public byte[] decryptStream(InputStream encryptedStream)
-    throws IOException, PGPException, NoSuchProviderException {
+    throws IOException, PGPException, NoSuchProviderException, SignatureException, VerificationFailedException {
 
       InputStream decoderStream = PGPUtil.getDecoderStream(encryptedStream);
 
@@ -135,27 +126,48 @@ public class Decryptor {
 
       pgpFactory = new PGPObjectFactory(compressedData.getDataStream());
 
-      while (true) {
-
-        Object obj = pgpFactory.nextObject();
-        if (obj == null) {
-            throw new NullPointerException("no more objects");
+      PGPOnePassSignatureList opsList = null;
+      PGPOnePassSignature ops = null;
+      PGPPublicKey signingKey = null;
+      Object obj = pgpFactory.nextObject();
+      if (obj instanceof PGPOnePassSignatureList) {
+        opsList = (PGPOnePassSignatureList) obj;
+        ops = opsList.get(0);
+        if (_publicKeys != null) {
+          signingKey = _publicKeys.getPublicKey(ops.getKeyID());
+          // TODO warn on key not found
         }
-        if (obj instanceof PGPLiteralData) {
-            literallyTheRealFuckingData = (PGPLiteralData) obj;
-            break;
+        // TODO warn on no public keys set
+        if (signingKey != null) {
+          ops.init(new JcaPGPContentVerifierBuilderProvider().setProvider("BC"), signingKey);
         }
 
+        literallyTheRealFuckingData = (PGPLiteralData) pgpFactory.nextObject();
+      } else if (obj instanceof PGPLiteralData) {
+        literallyTheRealFuckingData = (PGPLiteralData) obj;
+      } else {
+        throw new RuntimeException("unexpected object");
       }
 
       decryptedDataStream = literallyTheRealFuckingData.getInputStream();
 
       int ch;
-      while ((ch = decryptedDataStream.read()) >= 0)
+      while ((ch = decryptedDataStream.read()) >= 0) {
+        if (signingKey != null) {
+          ops.update((byte)ch);
+        }
         outputStream.write(ch);
+      }
 
       returnBytes = outputStream.toByteArray();
       outputStream.close();
+
+      if (signingKey != null) {
+        PGPSignatureList sigList = (PGPSignatureList) pgpFactory.nextObject();
+        if (!ops.verify(sigList.get(0))) {
+          throw new VerificationFailedException("Error: Signature could not be verified.");
+        }
+      }
 
       return returnBytes;
   }

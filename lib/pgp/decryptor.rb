@@ -10,6 +10,14 @@ module PGP
       self.private_keys = keyring_from_file(filename)
     end
 
+    def add_public_keys(key_string)
+      self.public_keys = public_keyring_from_string(key_string)
+    end
+
+    def add_public_keys_from_file(filename)
+      self.public_keys = public_keyring_from_file(filename)
+    end
+
     def decrypt(encrypted_data)
       input_stream    = PGP.string_to_bais(encrypted_data)
       decrypted_data  = decrypt_stream(input_stream)
@@ -34,6 +42,21 @@ module PGP
     def keyring_from_stream(stream)
       yafs = PGPUtil.get_decoder_stream(stream)
       PGPSecretKeyRingCollection.new(yafs)
+    end
+
+    def public_keyring_from_file(filename)
+      file = File.open(filename)
+      public_keyring_from_stream(file.to_inputstream)
+    end
+
+    def public_keyring_from_string(string)
+      input_stream = PGP.string_to_bais(string)
+      public_keyring_from_stream(input_stream)
+    end
+
+    def public_keyring_from_stream(stream)
+      yafs = PGPUtil.get_decoder_stream(stream)
+      PGPPublicKeyRingCollection.new(yafs)
     end
 
   end
